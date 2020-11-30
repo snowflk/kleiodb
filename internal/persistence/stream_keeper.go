@@ -3,11 +3,10 @@ package persistence
 type StreamKeeper interface {
 	// Create creates a stream.
 	// The stream name should contain only digits, letters, underscore and dash symbol
-	// Return error if the stream name already existed
+	// Returns error if the stream name already existed
 	Create(streamName string, payload []byte) error
 
 	// Get returns a stream and its metadata back
-	// This low-level storage does not care about
 	Get(streamName string) (RawStream, error)
 
 	// Find finds streams using a pattern and returns their name back
@@ -21,7 +20,7 @@ type StreamKeeper interface {
 	// IncrementVersion increments the latest version of the stream by a given amount
 	IncrementVersion(streamName string, increment uint32) (uint32, error)
 
-	// UpdatePayload update payload of an existed stream
+	// UpdatePayload updates payload of an existed stream
 	// Return error if the stream name does not exist
 	UpdatePayload(streamName string, payload []byte) error
 

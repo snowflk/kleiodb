@@ -14,8 +14,9 @@ import (
 type EventKeeper interface {
 	// Append a list of events to the stream
 	// Each event is a byte array, therefore, the parameter "data" must be a two-dimensional array (array of byte array)
+	// The parameter views is a list containing the view keys that those events should be indexed
 	// Returns an array of serials of appended events
-	Append(data [][]byte) ([]uint64, error)
+	Append(data [][]byte, views []string) ([]uint64, error)
 
 	// Add the events to an index, so that they can be queried faster in future.
 	// If the index does not exist, it will create a new one.
