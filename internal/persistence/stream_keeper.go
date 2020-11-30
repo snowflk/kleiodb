@@ -11,7 +11,7 @@ type StreamKeeper interface {
 
 	// FindStream finds streams using a pattern and returns their name back
 	// If the pattern is invalid, the function just ignores it and returns an empty array
-	FindStream(pattern Pattern) ([]string, error)
+	FindStreams(pattern Pattern) ([]string, error)
 
 	// GetStreamVersion returns the latest version of the given stream
 	// Returns an error if stream does not exist
