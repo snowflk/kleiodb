@@ -1,24 +1,29 @@
 package persistence
 
 type StreamKeeper interface {
-	// PutStream updates a stream, or creates a stream if it does not exist.
+	// Create creates a stream.
 	// The stream name should contain only digits, letters, underscore and dash symbol
-	PutStream(streamName string, payload []byte) error
+	// Return error if the stream name already existed
+	Create(streamName string, payload []byte) error
 
-	// GetStream returns a stream and its metadata back
+	// Get returns a stream and its metadata back
 	// This low-level storage does not care about
-	GetStream(streamName string) (RawStream, error)
+	Get(streamName string) (RawStream, error)
 
-	// FindStream finds streams using a pattern and returns their name back
+	// Find finds streams using a pattern and returns their name back
 	// If the pattern is invalid, the function just ignores it and returns an empty array
-	FindStream(pattern Pattern) ([]string, error)
+	Find(pattern Pattern) ([]string, error)
 
-	// GetStreamVersion returns the latest version of the given stream
+	// GetVersion returns the latest version of the given stream
 	// Returns an error if stream does not exist
-	GetStreamVersion(streamName string) (uint32, error)
+	GetVersion(streamName string) (uint32, error)
 
-	// IncrementStreamVersion increments the latest version of the stream by a given amount
-	IncrementStreamVersion(streamName string, increment uint32) (uint32, error)
+	// IncrementVersion increments the latest version of the stream by a given amount
+	IncrementVersion(streamName string, increment uint32) (uint32, error)
+
+	// UpdatePayload update payload of an existed stream
+	// Return error if the stream name does not exist
+	UpdatePayload(streamName string, payload []byte) error
 
 	Close() error
 }
