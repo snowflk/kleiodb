@@ -1,5 +1,7 @@
 package persistence
 
+import "time"
+
 type StreamKeeper interface {
 	// CreateStream creates a stream.
 	// The stream name should contain only digits, letters, underscore and dash symbol
@@ -30,6 +32,7 @@ type StreamKeeper interface {
 type RawStream struct {
 	StreamName string
 	Version    uint32
+	Timestamp  time.Time
 	Payload    []byte
 }
 
