@@ -4,10 +4,10 @@ type ViewKeeper interface {
 	// CreateView creates a view.
 	// The view name should contain only digits, letters, underscore and dash symbol
 	// Returns error if the view name already existed
-	CreateView(viewName string, payload []byte) error
+	CreateViewMeta(viewName string, payload []byte) error
 
 	// GetView returns a view and its metadata back
-	GetView(viewName string) (RawView, error)
+	GetViewMeta(viewName string) (RawView, error)
 
 	// FindViews finds views using a pattern and returns their name back
 	// If the pattern is invalid, the function just ignores it and returns an empty array
@@ -22,7 +22,7 @@ type ViewKeeper interface {
 
 	// UpdateStreamPayload updates payload of an existed view
 	// Return error if the view name does not exist
-	UpdateViewPayload(viewName string, payload []byte) error
+	UpdateViewMeta(viewName string, payload []byte) error
 
 	Close() error
 }
