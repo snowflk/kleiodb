@@ -129,6 +129,7 @@ func (s *storage) UpdateViewMeta(viewName string, payload []byte) error {
 	return s.db.exec(`UPDATE streams
 						SET data = ? 
 						WHERE name = ?;`, payload, viewName)
+
 }
 
 func (s *storage) AppendEvents(batchData [][]byte, views []string) ([]uint64, error) {
@@ -308,7 +309,6 @@ func addOffsetLimit(q string, args []interface{}, offset, limit uint64) (string,
 	args = append(args, limit)
 	q += " OFFSET ?"
 	args = append(args, offset)
-
 	return q, args
 }
 
