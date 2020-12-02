@@ -20,12 +20,17 @@ type EventKeeper interface {
 
 	// AddEventsToView the events to an index, so that they can be queried faster in future.
 	// If the index does not exist, it will create a new one.
+	// This operation should be idempotent
 	// Parameters:
 	// - viewName: name of the custom view, this must contain only digits, letters and underscore
 	// - serials: array of serial
 	AddEventsToView(viewName string, serials []uint64) error
 
 	GetEventsFromView(viewName string, offset, limit uint64) ([]RawEvent, error)
+
+	// DeleteView deletes a view.
+	// If the view does not exist, an error will be returned
+	DeleteView(viewName string) error
 
 	// Get events from the global stream
 	// Offset and Limit are analogous to SQL

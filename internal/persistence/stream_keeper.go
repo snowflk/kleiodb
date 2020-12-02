@@ -1,36 +1,36 @@
 package persistence
 
-type StreamKeeper interface {
-	// CreateStream creates a stream.
-	// The stream name should contain only digits, letters, underscore and dash symbol
-	// Returns error if the stream name already existed
-	CreateStream(streamName string, payload []byte) error
+type ViewKeeper interface {
+	// CreateView creates a view.
+	// The view name should contain only digits, letters, underscore and dash symbol
+	// Returns error if the view name already existed
+	CreateView(viewName string, payload []byte) error
 
-	// GetStream returns a stream and its metadata back
-	GetStream(streamName string) (RawStream, error)
+	// GetView returns a view and its metadata back
+	GetView(viewName string) (RawView, error)
 
-	// FindStream finds streams using a pattern and returns their name back
+	// FindViews finds views using a pattern and returns their name back
 	// If the pattern is invalid, the function just ignores it and returns an empty array
-	FindStreams(pattern Pattern) ([]string, error)
+	FindViews(pattern Pattern) ([]string, error)
 
-	// GetStreamVersion returns the latest version of the given stream
-	// Returns an error if stream does not exist
-	GetStreamVersion(streamName string) (uint32, error)
+	// GetViewVersion returns the latest version of the given view
+	// Returns an error if view does not exist
+	GetViewVersion(viewName string) (uint32, error)
 
-	// IncrementStreamVersion increments the latest version of the stream by a given amount
-	IncrementStreamVersion(streamName string, increment uint32) (uint32, error)
+	// IncrementViewVersion increments the latest version of the view by a given amount
+	IncrementViewVersion(viewName string, increment uint32) (uint32, error)
 
-	// UpdateStreamPayload updates payload of an existed stream
-	// Return error if the stream name does not exist
-	UpdateStreamPayload(streamName string, payload []byte) error
+	// UpdateStreamPayload updates payload of an existed view
+	// Return error if the view name does not exist
+	UpdateViewPayload(viewName string, payload []byte) error
 
 	Close() error
 }
 
-type RawStream struct {
-	StreamName string
-	Version    uint32
-	Payload    []byte
+type RawView struct {
+	ViewName string
+	Version  uint32
+	Payload  []byte
 }
 
 type Pattern string
