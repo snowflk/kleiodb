@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	p "github.com/snowflk/kleiodb/internal/persistence"
+	"log"
 	"regexp"
 	"strings"
 )
@@ -49,51 +50,51 @@ func New(options Options) (*storage, error) {
 	return &storage{db: db}, err
 }
 
-func (s *storage) CreateStream(streamName string, payload []byte) error {
-	if err := validateStreamName(streamName); err != nil {
+func (s *storage) CreateViewMeta(viewName string, payload []byte) error {
+	if err := validateViewName(viewName); err != nil {
 		return err
 	}
-	return s.db.exec("INSERT INTO streams(name, data) VALUES(?,?);", streamName, payload)
+	return s.db.exec("INSERT INTO streams(name, data) VALUES(?,?);", viewName, payload)
 }
 
-func (s *storage) GetStream(streamName string) (p.RawStream, error) {
-	var rawStream p.RawStream
-	if err := validateStreamName(streamName); err != nil {
+func (s *storage) GetViewMeta(viewName string) (p.RawView, error) {
+	var rawStream p.RawView
+	if err := validateViewName(viewName); err != nil {
 		return rawStream, err
 	}
-	row := s.db.queryOne("SELECT name, version, data FROM streams WHERE name = ?;", streamName)
-	if err := row.Scan(&rawStream.StreamName, &rawStream.Version, &rawStream.Payload); err != nil {
+	row := s.db.queryOne("SELECT name, version, data FROM streams WHERE name = ?;", viewName)
+	if err := row.Scan(&rawStream.ViewName, &rawStream.Version, &rawStream.Payload); err != nil {
 		return rawStream, err
 	}
 	return rawStream, nil
 }
 
-func (s *storage) FindStream(pattern p.Pattern) ([]string, error) {
+func (s *storage) FindViews(pattern p.Pattern) ([]string, error) {
 	rows, err := s.db.query("SELECT name FROM streams WHERE name like ?;", pattern.String())
 	defer rows.Close()
 	if err != nil {
 		return nil, err
 	}
-	streamNames := make([]string, 0)
+	viewNames := make([]string, 0)
 	for rows.Next() {
 		var streamName string
 		if err = rows.Scan(&streamName); err != nil {
 			return nil, err
 		}
-		streamNames = append(streamNames, streamName)
+		viewNames = append(viewNames, streamName)
 	}
-	return streamNames, nil
+	return viewNames, nil
 }
 
-func (s *storage) GetStreamVersion(streamName string) (uint32, error) {
-	if err := validateStreamName(streamName); err != nil {
+func (s *storage) GetViewVersion(viewName string) (uint32, error) {
+	if err := validateViewName(viewName); err != nil {
 		return 0, err
 	}
 	row := s.db.queryOne(`
 							SELECT version 
 							FROM streams 
 							WHERE name = ?
-							ORDER BY version DESC LIMIT 1;`, streamName)
+							ORDER BY version DESC LIMIT 1;`, viewName)
 	var version uint32 = 0
 	if err := row.Scan(&version); err != nil {
 		return 0, err
@@ -101,42 +102,37 @@ func (s *storage) GetStreamVersion(streamName string) (uint32, error) {
 	return version, nil
 }
 
-func (s *storage) IncrementStreamVersion(streamName string, increment uint32) (uint32, error) {
-	if err := validateStreamName(streamName); err != nil {
+func (s *storage) IncrementViewVersion(streamName string, increment uint32) (uint32, error) {
+	if err := validateViewName(streamName); err != nil {
 		return 0, err
 	}
-
-	row := s.db.queryOne(`UPDATE streams
-						SET version = version + ? 
-						WHERE name = ?
-						RETURNING version;`, increment, streamName)
-	var version uint32 = 0
-	if err := row.Scan(&version); err != nil {
-		return 0, err
-	}
-	return version, nil
+	return s.db.incrementViewVersion(streamName, `UPDATE streams
+							SET version = version + ?
+							WHERE name = ?`, increment, streamName)
 }
 
-func (s *storage) UpdateStreamPayload(streamName string, payload []byte) error {
-	if err := validateStreamName(streamName); err != nil {
+func (s *storage) UpdateViewMeta(viewName string, payload []byte) error {
+	if err := validateViewName(viewName); err != nil {
 		return err
 	}
 	if payload == nil {
 		return ErrDataInvalid
 	}
-	row := s.db.queryOne(`UPDATE streams
-						SET data = ? 
-						WHERE name = ?
-						RETURNING name;`, payload, streamName)
-	var result string
-	if err := row.Scan(&result); err != nil {
+	row := s.db.queryOne("SELECT COUNT(*) FROM streams WHERE name = ?;", viewName)
+	var counter = 0
+	if err := row.Scan(&counter); err != nil {
 		return err
 	}
-	return nil
+	if counter == 0 {
+		return ErrStreamNotExist
+	}
+	return s.db.exec(`UPDATE streams
+						SET data = ? 
+						WHERE name = ?;`, payload, viewName)
 }
 
 func (s *storage) AppendEvents(batchData [][]byte, views []string) ([]uint64, error) {
-	if batchData == nil {
+	if batchData == nil || len(batchData) == 0 {
 		return nil, ErrDataInvalid
 	}
 	dataSize := len(batchData)
@@ -148,22 +144,11 @@ func (s *storage) AppendEvents(batchData [][]byte, views []string) ([]uint64, er
 		queryArgs[i] = data
 	}
 
-	rows, err := s.db.query(
-		fmt.Sprintf("INSERT INTO raw_events (data) VALUES %s RETURNING serial",
-			strings.Join(queryPlaceholders, ",")), queryArgs...)
-	defer rows.Close()
+	serialNumbers, err := s.db.appendEvents(uint16(dataSize), fmt.Sprintf("INSERT INTO raw_events (data) VALUES %s ",
+		strings.Join(queryPlaceholders, ",")), queryArgs...)
 	if err != nil {
+		log.Println("ERR", err)
 		return nil, err
-	}
-
-	// Retrieve sequence numbers back
-	serialNumbers := make([]uint64, dataSize)
-	i := 0
-	for rows.Next() {
-		if err := rows.Scan(&serialNumbers[i]); err != nil {
-			return nil, err
-		}
-		i++
 	}
 
 	if views != nil {
@@ -178,10 +163,9 @@ func (s *storage) AppendEvents(batchData [][]byte, views []string) ([]uint64, er
 				queryArgs[idx*2+1] = serial
 			}
 		}
-		rows, err = s.db.query(
+		err = s.db.exec(
 			fmt.Sprintf("INSERT INTO views (view_name, serial) VALUES %s",
 				strings.Join(queryPlaceholders, ",")), queryArgs...)
-		defer rows.Close()
 		if err != nil {
 			return nil, err
 		}
@@ -225,9 +209,9 @@ func (s *storage) GetEventsFromView(viewName string, offset, limit uint64) ([]p.
 }
 
 func (s *storage) GetEvents(offset, limit uint64) ([]p.RawEvent, error) {
-	query := `SELECT serial, data, created_at 
-				FROM raw_events`
-	return s.queryRawEvents(query, []interface{}{}, offset, limit)
+	return s.queryRawEvents(`
+				SELECT serial, data, created_at FROM raw_events`,
+		[]interface{}{}, offset, limit)
 }
 
 func (s *storage) SaveSnapshot(source, key string, data []byte) error {
@@ -239,11 +223,7 @@ func (s *storage) SaveSnapshot(source, key string, data []byte) error {
 		return ErrSnapshotNameEmpty
 	}
 
-	row := s.db.queryOne("INSERT INTO snapshots(name, source, data) VALUES(?, ?, ?) RETURNING name", key, source, data)
-	if err := row.Scan(&key); err != nil {
-		return err
-	}
-	return nil
+	return s.db.exec("INSERT INTO snapshots(name, source, data) VALUES(?, ?, ?);", key, source, data)
 }
 
 func (s *storage) GetSnapshot(source, key string) (p.RawSnapshot, error) {
@@ -312,24 +292,23 @@ func (s *storage) init() error {
 	return nil
 }
 
-func validateStreamName(streamName string) error {
-	if len(streamName) == 0 {
+func validateViewName(viewName string) error {
+	if len(viewName) == 0 {
 		return ErrStreamEmpty
 	}
-	isStreamName := regexp.MustCompile(`^[A-Za-z0-9\-\_]+$`).MatchString
-	if !isStreamName(streamName) {
+	isViewName := regexp.MustCompile(`^[A-Za-z0-9\-\_]+$`).MatchString
+	if !isViewName(viewName) {
 		return ErrStreamInvalid
 	}
 	return nil
 }
 
 func addOffsetLimit(q string, args []interface{}, offset, limit uint64) (string, []interface{}) {
+	q += " LIMIT ?"
+	args = append(args, limit)
 	q += " OFFSET ?"
 	args = append(args, offset)
-	if limit > 0 {
-		q += " LIMIT ?"
-		args = append(args, limit)
-	}
+
 	return q, args
 }
 
@@ -339,6 +318,7 @@ func (s *storage) queryRawEvents(query string, args []interface{}, offset, limit
 	rows, err := s.db.query(query, args...)
 	defer rows.Close()
 	if err != nil {
+		log.Println("ERR", err.Error())
 		return nil, err
 	}
 

@@ -1,12 +1,12 @@
 package persistence
 
 type ViewKeeper interface {
-	// CreateView creates a view.
+	// CreateViewMeta creates a view.
 	// The view name should contain only digits, letters, underscore and dash symbol
 	// Returns error if the view name already existed
 	CreateViewMeta(viewName string, payload []byte) error
 
-	// GetView returns a view and its metadata back
+	// GetViewMeta returns a view and its metadata back
 	GetViewMeta(viewName string) (RawView, error)
 
 	// FindViews finds views using a pattern and returns their name back
@@ -20,7 +20,7 @@ type ViewKeeper interface {
 	// IncrementViewVersion increments the latest version of the view by a given amount
 	IncrementViewVersion(viewName string, increment uint32) (uint32, error)
 
-	// UpdateStreamPayload updates payload of an existed view
+	// UpdateViewMeta updates payload of an existed view
 	// Return error if the view name does not exist
 	UpdateViewMeta(viewName string, payload []byte) error
 

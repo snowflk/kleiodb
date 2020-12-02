@@ -11,6 +11,35 @@ type postgresConn struct {
 	conn *sql.DB
 }
 
+func (c *postgresConn) incrementViewVersion(viewName, q string, args ...interface{}) (uint32, error) {
+
+	row := c.queryOne(q+" RETURNING version;", args...)
+	var version uint32
+	if err := row.Scan(&version); err != nil {
+		return version, err
+	}
+	return version, nil
+}
+
+func (c *postgresConn) appendEvents(nEvents uint16, q string, args ...interface{}) ([]uint64, error) {
+	rows, err := c.query(q+" RETURNING serial", args...)
+	defer rows.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	serials := make([]uint64, nEvents)
+	counter := 0
+	for rows.Next() {
+		if err = rows.Scan(&serials[counter]); err != nil {
+			return nil, err
+		}
+		counter++
+	}
+	return serials, nil
+
+}
+
 func (c *postgresConn) initStreamTbl() error {
 	return c.exec(`
 			CREATE TABLE IF NOT EXISTS streams

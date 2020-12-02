@@ -24,7 +24,7 @@ type addingEventsToView struct {
 	hasError bool
 }
 
-type addingStreams struct {
+type addingViews struct {
 	name     string
 	data     []byte
 	hasError bool
@@ -37,33 +37,33 @@ type addingSnapshots struct {
 	err    error
 }
 
-func TestStorage_CreateStream(t *testing.T) {
+func TestStorage_CreateViewMeta(t *testing.T) {
 	mustInitStorage("postgres")
-	t.Run("Postgres_CreateStream", caseCreateStream)
+	t.Run("Postgres_CreateViewMeta", caseCreateViewMeta)
 	s.db.close()
 
 	mustInitStorage("mysql")
-	t.Run("MySQL_CreateStream", caseCreateStream)
+	t.Run("MySQL_CreateViewMeta", caseCreateViewMeta)
 	s.db.close()
 }
 
-func TestStorage_GetStream(t *testing.T) {
+func TestStorage_GetViewMeta(t *testing.T) {
 	mustInitStorage("postgres")
-	t.Run("Postgres_GetStream", caseGetStream)
+	t.Run("Postgres_GetViewMeta", caseGetViewMeta)
 	s.db.close()
 
 	mustInitStorage("mysql")
-	t.Run("MySQL_CreateStream", caseCreateStream)
+	t.Run("MySQL_GetViewMeta", caseGetViewMeta)
 	s.db.close()
 }
 
-func TestStorage_FindStream(t *testing.T) {
+func TestStorage_FindStreams(t *testing.T) {
 	mustInitStorage("postgres")
-	t.Run("Postgres_FindStream", caseFindStream)
+	t.Run("Postgres_FindStreams", caseFindStreams)
 	s.db.close()
 
 	mustInitStorage("mysql")
-	t.Run("MySQL_CreateStream", caseCreateStream)
+	t.Run("MySQL_FindStreams", caseFindStreams)
 	s.db.close()
 }
 
@@ -73,27 +73,27 @@ func TestStorage_IncrementStreamVersion(t *testing.T) {
 	s.db.close()
 
 	mustInitStorage("mysql")
-	t.Run("MySQL_CreateStream", caseCreateStream)
+	t.Run("MySQL_IncrementStreamVersion", caseIncrementStreamVersion)
 	s.db.close()
 }
 
-func TestStorage_GetStreamVersion(t *testing.T) {
+func TestStorage_GetViewMetaVersion(t *testing.T) {
 	mustInitStorage("postgres")
-	t.Run("Postgres_GetStreamVersion", caseGetStreamVersion)
+	t.Run("Postgres_GetViewMetaVersion", caseGetViewMetaVersion)
 	s.db.close()
 
 	mustInitStorage("mysql")
-	t.Run("MySQL_CreateStream", caseCreateStream)
+	t.Run("MySQL_GetViewMetaVersion", caseGetViewMetaVersion)
 	s.db.close()
 }
 
-func TestStorage_UpdateStreamPayload(t *testing.T) {
+func TestStorage_UpdateUpdateViewMeta(t *testing.T) {
 	mustInitStorage("postgres")
-	t.Run("Postgres_UpdateStreamPayload", caseUpdateStreamPayload)
+	t.Run("Postgres_UpdateViewMeta", caseUpdateViewMeta)
 	s.db.close()
 
 	mustInitStorage("mysql")
-	t.Run("MySQL_CreateStream", caseCreateStream)
+	t.Run("MySQL_UpdateViewMeta", caseUpdateViewMeta)
 	s.db.close()
 }
 
@@ -103,7 +103,7 @@ func TestStorage_AppendEvents(t *testing.T) {
 	s.db.close()
 
 	mustInitStorage("mysql")
-	t.Run("MySQL_CreateStream", caseCreateStream)
+	t.Run("MySQL_AppendEvents", caseAppendEvents)
 	s.db.close()
 }
 
@@ -113,7 +113,7 @@ func TestStorage_AddEventsToView(t *testing.T) {
 	s.db.close()
 
 	mustInitStorage("mysql")
-	t.Run("MySQL_CreateStream", caseCreateStream)
+	t.Run("MySQL_AddEventsToView", caseAddEventsToView)
 	s.db.close()
 }
 
@@ -123,7 +123,7 @@ func TestStorage_GetEventsFromView(t *testing.T) {
 	s.db.close()
 
 	mustInitStorage("mysql")
-	t.Run("MySQL_CreateStream", caseCreateStream)
+	t.Run("MySQL_GetEventsFromView", caseGetEventsFromView)
 	s.db.close()
 }
 
@@ -133,7 +133,7 @@ func TestStorage_GetEvents(t *testing.T) {
 	s.db.close()
 
 	mustInitStorage("mysql")
-	t.Run("MySQL_CreateStream", caseCreateStream)
+	t.Run("MySQL_GetEvents", caseGetEvents)
 	s.db.close()
 }
 
@@ -143,7 +143,7 @@ func TestStorage_SaveSnapshot(t *testing.T) {
 	s.db.close()
 
 	mustInitStorage("mysql")
-	t.Run("MySQL_CreateStream", caseCreateStream)
+	t.Run("MySQL_SaveSnapshot", caseSaveSnapshot)
 	s.db.close()
 }
 
@@ -153,22 +153,22 @@ func TestStorage_GetSnapshot(t *testing.T) {
 	s.db.close()
 
 	mustInitStorage("mysql")
-	t.Run("MySQL_CreateStream", caseCreateStream)
+	t.Run("MySQL_GetSnapshot", caseGetSnapshot)
 	s.db.close()
 }
 
-func TestStorage_FindSnapshot(t *testing.T) {
+func TestStorage_FindSnapshots(t *testing.T) {
 	mustInitStorage("postgres")
-	t.Run("Postgres_FindSnapshot", caseFindSnapshot)
+	t.Run("Postgres_FindSnapshots", caseFindSnapshots)
 	s.db.close()
 
 	mustInitStorage("mysql")
-	t.Run("MySQL_CreateStream", caseCreateStream)
+	t.Run("Postgres_FindSnapshots", caseFindSnapshots)
 	s.db.close()
 }
 
-func caseCreateStream(t *testing.T) {
-	streams := []addingStreams{
+func caseCreateViewMeta(t *testing.T) {
+	streams := []addingViews{
 		// Positive test
 		{name: "stream-1", data: []byte(`{"a":0, "b":"1"}`)},
 		{name: "stream-2", data: []byte(`{"a":0, "b":"1"}`)},
@@ -194,7 +194,7 @@ func caseCreateStream(t *testing.T) {
 	}
 
 	for _, item := range streams {
-		err := s.CreateStream(item.name, item.data)
+		err := s.CreateViewMeta(item.name, item.data)
 		if item.hasError {
 			if err == nil {
 				t.Error(item.name, "shouldn't be added")
@@ -207,43 +207,43 @@ func caseCreateStream(t *testing.T) {
 	}
 }
 
-func caseGetStream(t *testing.T) {
+func caseGetViewMeta(t *testing.T) {
 	addStreamToStorage(t)
 	tests := []struct {
-		streamName string
-		expected   p.RawStream
-		hasError   bool
+		viewName string
+		expected p.RawView
+		hasError bool
 	}{
 		// Positive test
-		{streamName: "stream-1", expected: p.RawStream{StreamName: "stream-1", Payload: []byte(`{"a":0, "b":"1"}`), Version: 0}},
-		{streamName: "stream-2", expected: p.RawStream{StreamName: "stream-2", Payload: []byte(`{"a":0, "b":"1"}`), Version: 0}},
-		{streamName: "global", expected: p.RawStream{StreamName: "global", Payload: []byte(`{"a":0, "b":"1"}`), Version: 0}},
+		{viewName: "stream-1", expected: p.RawView{ViewName: "stream-1", Payload: []byte(`{"a":0, "b":"1"}`), Version: 0}},
+		{viewName: "stream-2", expected: p.RawView{ViewName: "stream-2", Payload: []byte(`{"a":0, "b":"1"}`), Version: 0}},
+		{viewName: "global", expected: p.RawView{ViewName: "global", Payload: []byte(`{"a":0, "b":"1"}`), Version: 0}},
 
 		// Invalid name shouldn't be allowed
-		{streamName: "", hasError: true},
-		{streamName: " ", hasError: true},
-		{streamName: "stream!", hasError: true},
-		{streamName: "!", hasError: true},
-		{streamName: "stream+", hasError: true},
-		{streamName: "stream.1", hasError: true},
-		{streamName: "stream 11", hasError: true},
+		{viewName: "", hasError: true},
+		{viewName: " ", hasError: true},
+		{viewName: "stream!", hasError: true},
+		{viewName: "!", hasError: true},
+		{viewName: "stream+", hasError: true},
+		{viewName: "stream.1", hasError: true},
+		{viewName: "stream 11", hasError: true},
 	}
 	for _, test := range tests {
-		event, err := s.GetStream(test.streamName)
+		event, err := s.GetViewMeta(test.viewName)
 		if test.hasError {
 			if err == nil {
-				t.Error(test.streamName, "shouldn't be found")
+				t.Error(test.viewName, "shouldn't be found")
 			}
 		} else {
 			if err != nil {
-				t.Error(test.streamName, "should be found")
+				t.Error(test.viewName, "should be found")
 			}
 			assert.Equal(t, test.expected, event)
 		}
 	}
 }
 
-func caseFindStream(t *testing.T) {
+func caseFindStreams(t *testing.T) {
 	addStreamToStorage(t)
 
 	tests := []struct {
@@ -258,8 +258,8 @@ func caseFindStream(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		event, _ := s.FindStream(p.Pattern(test.streamName))
-		assert.Equal(t, test.expected, event)
+		event, _ := s.FindViews(p.Pattern(test.streamName))
+		assert.ElementsMatch(t, test.expected, event)
 	}
 }
 
@@ -286,7 +286,7 @@ func caseIncrementStreamVersion(t *testing.T) {
 		{streamName: "stream.1", increment: 5, expected: 6, hasError: true},
 	}
 	for _, test := range tests {
-		version, err := s.IncrementStreamVersion(test.streamName, test.increment)
+		version, err := s.IncrementViewVersion(test.streamName, test.increment)
 		if test.hasError {
 			if err == nil {
 				t.Errorf("%s's version shoudn't be updated\n", test.streamName)
@@ -300,7 +300,7 @@ func caseIncrementStreamVersion(t *testing.T) {
 	}
 }
 
-func caseGetStreamVersion(t *testing.T) {
+func caseGetViewMetaVersion(t *testing.T) {
 	addStreamToStorage(t)
 
 	tests := []struct {
@@ -319,7 +319,7 @@ func caseGetStreamVersion(t *testing.T) {
 		{streamName: "stream.1", expected: 6, hasError: true},
 	}
 	for _, test := range tests {
-		version, err := s.GetStreamVersion(test.streamName)
+		version, err := s.GetViewVersion(test.streamName)
 		if test.hasError {
 			if err == nil {
 				t.Errorf("%s's version shoudn't be found\n", test.streamName)
@@ -348,12 +348,12 @@ func caseGetStreamVersion(t *testing.T) {
 	}
 
 	for _, test := range testUpdateAndGetVersion {
-		_, err := s.IncrementStreamVersion(test.streamName, test.increment)
+		_, err := s.IncrementViewVersion(test.streamName, test.increment)
 		if err != nil {
 			t.Errorf("%s's version shoud be updated\n", test.streamName)
 		}
 
-		version, err := s.GetStreamVersion(test.streamName)
+		version, err := s.GetViewVersion(test.streamName)
 		if err != nil {
 			t.Errorf("%s's version shoud be found\n", test.streamName)
 		}
@@ -361,21 +361,21 @@ func caseGetStreamVersion(t *testing.T) {
 	}
 }
 
-func caseUpdateStreamPayload(t *testing.T) {
+func caseUpdateViewMeta(t *testing.T) {
 	addStreamToStorage(t)
 
 	tests := []struct {
 		streamName string
 		payload    []byte
-		expected   p.RawStream
+		expected   p.RawView
 		hasError   bool
 	}{
 		// Positive test
-		{streamName: "stream-1", payload: []byte(`{"a1":1, "b1":"2"}`), expected: p.RawStream{"stream-1", 0, []byte(`{"a1":1, "b1":"2"}`)}},
-		{streamName: "stream-1", payload: []byte(`{"a2":2, "b2":"3"}`), expected: p.RawStream{"stream-1", 0, []byte(`{"a2":2, "b2":"3"}`)}},
-		{streamName: "stream-2", payload: []byte(`{"a2":2, "b2":"3"}`), expected: p.RawStream{"stream-2", 0, []byte(`{"a2":2, "b2":"3"}`)}},
-		{streamName: "global", payload: []byte(`{"a2":2, "b2":"3"}`), expected: p.RawStream{"global", 0, []byte(`{"a2":2, "b2":"3"}`)}},
-		{streamName: "stream-1", payload: []byte(`{"a5":10, "b6":"11"}`), expected: p.RawStream{"stream-1", 0, []byte(`{"a5":10, "b6":"11"}`)}},
+		{streamName: "stream-1", payload: []byte(`{"a1":1, "b1":"2"}`), expected: p.RawView{"stream-1", 0, []byte(`{"a1":1, "b1":"2"}`)}},
+		{streamName: "stream-1", payload: []byte(`{"a2":2, "b2":"3"}`), expected: p.RawView{"stream-1", 0, []byte(`{"a2":2, "b2":"3"}`)}},
+		{streamName: "stream-2", payload: []byte(`{"a2":2, "b2":"3"}`), expected: p.RawView{"stream-2", 0, []byte(`{"a2":2, "b2":"3"}`)}},
+		{streamName: "global", payload: []byte(`{"a2":2, "b2":"3"}`), expected: p.RawView{"global", 0, []byte(`{"a2":2, "b2":"3"}`)}},
+		{streamName: "stream-1", payload: []byte(`{"a5":10, "b6":"11"}`), expected: p.RawView{"stream-1", 0, []byte(`{"a5":10, "b6":"11"}`)}},
 
 		// Invalid stream name
 		{streamName: " ", payload: []byte(`{"a5":10, "b6":"11"}`), hasError: true},
@@ -392,7 +392,7 @@ func caseUpdateStreamPayload(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		err := s.UpdateStreamPayload(test.streamName, test.payload)
+		err := s.UpdateViewMeta(test.streamName, test.payload)
 		if test.hasError {
 			if err == nil {
 				t.Error(test.streamName, "shouldn't be updated")
@@ -402,7 +402,7 @@ func caseUpdateStreamPayload(t *testing.T) {
 				t.Error(test.streamName, "should be updated")
 			}
 
-			stream, err := s.GetStream(test.streamName)
+			stream, err := s.GetViewMeta(test.streamName)
 			if err != nil {
 				t.Error(test.streamName, "should be found")
 			}
@@ -546,6 +546,7 @@ func caseGetEventsFromView(t *testing.T) {
 	}
 
 	for _, test := range tests {
+		log.Println("TEST", test.viewName, test.offset, test.limit, test.hasError)
 		rawEvents, err := s.GetEventsFromView(test.viewName, test.offset, test.limit)
 		if test.hasError {
 			if err == nil {
@@ -682,7 +683,7 @@ func caseGetSnapshot(t *testing.T) {
 	}
 }
 
-func caseFindSnapshot(t *testing.T) {
+func caseFindSnapshots(t *testing.T) {
 	addSnapshotToStorage(t)
 
 	tests := []struct {
@@ -794,7 +795,7 @@ func mustInitStorage(driver string) {
 }
 
 func addStreamToStorage(t *testing.T) {
-	streams := []addingStreams{
+	streams := []addingViews{
 		{name: "stream-1", data: []byte(`{"a":0, "b":"1"}`)},
 		{name: "stream-2", data: []byte(`{"a":0, "b":"1"}`)},
 		{name: "global", data: []byte(`{"a":0, "b":"1"}`)},
@@ -803,7 +804,7 @@ func addStreamToStorage(t *testing.T) {
 	}
 
 	for _, stream := range streams {
-		err := s.CreateStream(stream.name, stream.data)
+		err := s.CreateViewMeta(stream.name, stream.data)
 		if err != nil {
 			t.Error(stream.name, "is not valid:", err.Error())
 		}

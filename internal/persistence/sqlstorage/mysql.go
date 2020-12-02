@@ -11,6 +11,65 @@ type mysqlConn struct {
 	conn *sql.DB
 }
 
+func (c *mysqlConn) incrementViewVersion(viewName, q string, args ...interface{}) (uint32, error) {
+	tx, err := c.conn.Begin()
+	if err != nil {
+		return 0, err
+	}
+
+	_, err = tx.Exec(q, args...)
+	if err != nil {
+		return 0, err
+	}
+
+	row := tx.QueryRow("SELECT version FROM streams WHERE name = ?;", viewName)
+
+	var version uint32
+	if err := row.Scan(&version); err != nil {
+		tx.Rollback()
+		return version, err
+	}
+	if err = tx.Commit(); err != nil {
+		return version, err
+	}
+	return version, nil
+
+}
+
+func (c *mysqlConn) appendEvents(nEvents uint16, q string, args ...interface{}) ([]uint64, error) {
+	tx, err := c.conn.Begin()
+	if err != nil {
+		return nil, err
+	}
+	_, err = tx.Exec(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := tx.Query(`SELECT serial
+					FROM (SELECT serial FROM raw_events ORDER BY serial DESC LIMIT ?)s
+					ORDER BY serial ASC`, nEvents)
+	defer rows.Close()
+	if err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+
+	serials := make([]uint64, nEvents)
+	counter := 0
+	for rows.Next() {
+		if err = rows.Scan(&serials[counter]); err != nil {
+			return nil, err
+		}
+		counter++
+	}
+
+	if err = tx.Commit(); err != nil {
+		return nil, err
+	}
+	return serials, nil
+
+}
+
 func (c *mysqlConn) initStreamTbl() error {
 	return c.exec(`
 			CREATE TABLE IF NOT EXISTS streams
@@ -28,7 +87,7 @@ func (c *mysqlConn) initEventTbl() error {
 			(
 				serial          BIGINT AUTO_INCREMENT PRIMARY KEY,
 				data            BLOB        NOT NULL,
-				created_at      TIMESTAMP
+				created_at      TIMESTAMP NOT NULL DEFAULT NOW()
 			);
 	`)
 }
@@ -38,8 +97,9 @@ func (c *mysqlConn) initViewTbl() error {
 			CREATE TABLE IF NOT EXISTS views
 			(
 				view_name       VARCHAR(100)    NOT NULL,
-				serial          BIGINT          NOT NULL REFERENCES raw_events(serial),
-				UNIQUE (view_name, serial)
+				serial          BIGINT          NOT NULL,
+				UNIQUE (view_name, serial),
+				FOREIGN KEY (serial) REFERENCES raw_events(serial)
 			);
 	`)
 	if err != nil {
@@ -55,7 +115,7 @@ func (c *mysqlConn) initSnapshotTbl() error {
 				name 			VARCHAR(100)	NOT NULL,	
 				source       	VARCHAR(100)    NOT NULL,
 				data          	BLOB 			NOT NULL,
-				created_at      TIMESTAMP
+				created_at      TIMESTAMP 		NOT NULL DEFAULT NOW()
 			);
 	`)
 	if err != nil {
@@ -136,7 +196,7 @@ func (c *mysqlConn) dropIndex(tableName, indexName string) error {
 }
 
 func newMySQLConnection(opts Options) (dbConn, error) {
-	connStr := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s",
+	connStr := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?parseTime=true",
 		opts.User, opts.Password, opts.Host, opts.Port, opts.Database)
 	db, err := sql.Open("mysql", connStr)
 	db.SetMaxOpenConns(MaxOpenConnections)
