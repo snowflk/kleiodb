@@ -30,7 +30,7 @@ type EventKeeper interface {
 
 	// DeleteView deletes a view.
 	// If the view does not exist, an error will be returned
-	DeleteView(viewName string) error
+	ClearView(viewName string) error
 
 	// Get events from the global stream
 	// Offset and Limit are analogous to SQL
