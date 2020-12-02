@@ -11,7 +11,7 @@ type ViewKeeper interface {
 
 	// FindViews finds views using a pattern and returns their name back
 	// If the pattern is invalid, the function just ignores it and returns an empty array
-	FindViews(pattern Pattern) ([]string, error)
+	FindViews(pattern SearchPattern) ([]string, error)
 
 	// GetViewVersion returns the latest version of the given view
 	// Returns an error if view does not exist
@@ -31,14 +31,4 @@ type RawView struct {
 	ViewName string
 	Version  uint32
 	Payload  []byte
-}
-
-type Pattern string
-
-func (p Pattern) Match(name string) bool {
-	panic("implement me")
-}
-
-func (p Pattern) String() string {
-	return string(p)
 }

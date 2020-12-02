@@ -16,7 +16,7 @@ type SnapshotKeeper interface {
 
 	// FindSnapshots finds all snapshots matching the given pattern from a source
 	// Returns an array of snapshot keys
-	FindSnapshots(source string, pattern Pattern) ([]string, error)
+	FindSnapshots(source string, pattern SearchPattern) ([]string, error)
 	Close() error
 }
 
