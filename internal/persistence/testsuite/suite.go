@@ -3,23 +3,28 @@ package testsuite
 import (
 	"github.com/snowflk/kleiodb/internal/persistence"
 	"github.com/stretchr/testify/suite"
+	"log"
 )
 
 type persistenceModuleTestSuite struct {
 	suite.Suite
-	storage persistence.Storage
+	storage  persistence.Storage
+	provider StorageProvider
 }
 
-func NewTestSuite(storage persistence.Storage) *persistenceModuleTestSuite {
+type StorageProvider func() persistence.Storage
+
+func NewTestSuite(provider StorageProvider) *persistenceModuleTestSuite {
 	return &persistenceModuleTestSuite{
-		storage: storage,
+		provider: provider,
 	}
 }
 
 func (s *persistenceModuleTestSuite) SetupTest() {
-
+	s.storage = s.provider()
 }
 
-func (s *persistenceModuleTestSuite) TestA() {
-	s.Equal(5, 5)
+func (s *persistenceModuleTestSuite) TearDownTest() {
+	log.Println("After test")
+	defer s.storage.Close()
 }
