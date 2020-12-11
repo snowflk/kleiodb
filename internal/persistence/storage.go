@@ -11,4 +11,5 @@ type Storage interface {
 	EventKeeper
 	ViewKeeper
 	SnapshotKeeper
+	ForceFlush() error
 }

@@ -2,17 +2,26 @@ package mysql
 
 import (
 	"fmt"
+	"log"
 	"strings"
 )
 
 func (s *Storage) initTables() error {
 	if err := s.initStreamTbl(); err != nil {
+		log.Println("error init table stream ")
 		return err
 	}
 	if err := s.initEventTbl(); err != nil {
+		log.Println("error init table event ")
 		return err
 	}
 	if err := s.initViewTbl(); err != nil {
+		log.Println("error init table view ")
+		return err
+	}
+
+	if err := s.initSnapshotTbl(); err != nil {
+		log.Println("error init table snapshot ")
 		return err
 	}
 	return nil

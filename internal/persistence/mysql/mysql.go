@@ -3,9 +3,12 @@ package mysql
 import (
 	"database/sql"
 	"fmt"
+	_ "github.com/go-sql-driver/mysql"
 	p "github.com/snowflk/kleiodb/internal/persistence"
 	"log"
+	"math"
 	"strings"
+	"sync"
 )
 
 const (
@@ -14,7 +17,8 @@ const (
 )
 
 type Storage struct {
-	db *sql.DB
+	appendLock sync.Mutex
+	db         *sql.DB
 }
 
 type Options struct {
@@ -37,6 +41,10 @@ func New(opts Options) (*Storage, error) {
 	return &Storage{db: db}, nil
 }
 
+func (s *Storage) ForceFlush() error {
+	return nil
+}
+
 func (s *Storage) AppendEvents(data [][]byte, views []string) ([]uint64, error) {
 	if data == nil || len(data) == 0 {
 		return nil, p.ErrDataInvalid
@@ -49,21 +57,24 @@ func (s *Storage) AppendEvents(data [][]byte, views []string) ([]uint64, error) 
 		queryPlaceholders[i] = "(?)"
 		queryArgs[i] = item
 	}
+	s.appendLock.Lock()
+	defer s.appendLock.Unlock()
 
 	tx, err := s.db.Begin()
 	if err != nil {
 		return nil, err
 	}
 
-	_, err = tx.Exec(fmt.Sprintf("INSERT INTO raw_events (data) VALUES %s ",
+	_, err = tx.Exec(fmt.Sprintf("INSERT INTO raw_events (data) VALUES %s ;",
 		strings.Join(queryPlaceholders, ",")), queryArgs...)
 	if err != nil {
 		return nil, err
 	}
 
-	rows, err := tx.Query(`SELECT serial
+	rows, err := tx.Query(`
+					SELECT serial
 					FROM (SELECT serial FROM raw_events ORDER BY serial DESC LIMIT ?)s
-					ORDER BY serial ASC`, dataSize)
+					ORDER BY serial ASC;`, dataSize)
 	defer rows.Close()
 	if err != nil {
 		tx.Rollback()
@@ -83,7 +94,7 @@ func (s *Storage) AppendEvents(data [][]byte, views []string) ([]uint64, error) 
 		return nil, err
 	}
 
-	if views != nil {
+	if views != nil && len(views) > 0 {
 		// Append serials to views based on view name
 		queryPlaceholders := make([]string, dataSize*len(views))
 		queryArgs := make([]interface{}, 2*dataSize*len(views))
@@ -106,10 +117,6 @@ func (s *Storage) AppendEvents(data [][]byte, views []string) ([]uint64, error) 
 }
 
 func (s *Storage) AddEventsToView(viewName string, serials []uint64) error {
-	if p.CheckStringEmpty(viewName) {
-		return p.ErrViewEmpty
-	}
-
 	if serials == nil {
 		return p.ErrDataInvalid
 	}
@@ -131,9 +138,6 @@ func (s *Storage) AddEventsToView(viewName string, serials []uint64) error {
 }
 
 func (s *Storage) GetEventsFromView(viewName string, offset, limit uint64) ([]p.RawEvent, error) {
-	if p.CheckStringEmpty(viewName) {
-		return nil, p.ErrViewEmpty
-	}
 	query := `
 			SELECT e.serial, e.data, e.created_at
 			FROM views v
@@ -155,18 +159,12 @@ func (s *Storage) GetEvents(offset, limit uint64) ([]p.RawEvent, error) {
 }
 
 func (s *Storage) CreateViewMeta(viewName string, payload []byte) error {
-	if err := p.ValidateString(viewName); err != nil {
-		return err
-	}
 	_, err := s.db.Exec("INSERT INTO streams(name, data) VALUES(?,?);", viewName, payload)
 	return err
 }
 
 func (s *Storage) GetViewMeta(viewName string) (p.RawView, error) {
 	var rawStream p.RawView
-	if err := p.ValidateString(viewName); err != nil {
-		return rawStream, err
-	}
 	row := s.db.QueryRow("SELECT name, version, data FROM streams WHERE name = ?;", viewName)
 	if err := row.Scan(&rawStream.ViewName, &rawStream.Version, &rawStream.Payload); err != nil {
 		return rawStream, err
@@ -195,9 +193,6 @@ func (s *Storage) FindViews(pattern p.SearchPattern) ([]string, error) {
 }
 
 func (s *Storage) GetViewVersion(viewName string) (uint32, error) {
-	if err := p.ValidateString(viewName); err != nil {
-		return 0, err
-	}
 	row := s.db.QueryRow(`
 							SELECT version 
 							FROM streams 
@@ -213,10 +208,6 @@ func (s *Storage) GetViewVersion(viewName string) (uint32, error) {
 }
 
 func (s *Storage) IncrementViewVersion(viewName string, increment uint32) (uint32, error) {
-	if err := p.ValidateString(viewName); err != nil {
-		return 0, err
-	}
-
 	tx, err := s.db.Begin()
 	if err != nil {
 		return 0, err
@@ -243,9 +234,6 @@ func (s *Storage) IncrementViewVersion(viewName string, increment uint32) (uint3
 }
 
 func (s *Storage) UpdateViewMeta(viewName string, payload []byte) error {
-	if err := p.ValidateString(viewName); err != nil {
-		return err
-	}
 	if payload == nil {
 		return p.ErrDataInvalid
 	}
@@ -264,44 +252,34 @@ func (s *Storage) UpdateViewMeta(viewName string, payload []byte) error {
 }
 
 func (s *Storage) SaveSnapshot(source, name string, data []byte) error {
-	err := p.ValidateSnapshotSourceAndName(source, name)
-	if err != nil {
-		return err
-	}
-
-	_, err = s.db.Exec("INSERT INTO snapshots(name, source, data) VALUES(?, ?, ?);", name, source, data)
+	_, err := s.db.Exec("INSERT INTO snapshots(name, source, data) VALUES(?, ?, ?);", name, source, data)
 	return err
 }
 
 func (s *Storage) GetSnapshot(source, name string) (p.RawSnapshot, error) {
 	var snapShot p.RawSnapshot
 
-	err := p.ValidateSnapshotSourceAndName(source, name)
-	if err != nil {
-		return snapShot, err
-	}
+	row := s.db.QueryRow(`
+							SELECT source, name, data, created_at 
+							FROM snapshots 
+							WHERE source = ? AND name =? 
+							ORDER BY created_at DESC 
+							LIMIT 1;`, source, name)
 
-	rows, err := s.db.Query("SELECT source, name, data, created_at FROM snapshots WHERE source = ? AND name = ? LIMIT 1;", source, name)
-	defer rows.Close()
-	if err != nil {
+	if err := row.Scan(&snapShot.Source, &snapShot.Name, &snapShot.Payload, &snapShot.Timestamp); err != nil {
 		return snapShot, err
-	}
-	for rows.Next() {
-		if err = rows.Scan(&snapShot.Source, &snapShot.Name, &snapShot.Payload, &snapShot.Timestamp); err != nil {
-			return snapShot, err
-		}
 	}
 
 	return snapShot, nil
 }
 
 func (s *Storage) FindSnapshots(source string, pattern p.SearchPattern) ([]string, error) {
-	if p.CheckStringEmpty(source) {
-		return nil, p.ErrSnapshotSourceEmpty
-	}
-
-	rows, err := s.db.Query("SELECT DISTINCT name FROM snapshots WHERE source = ? AND name like ?;", source, pattern.String())
-
+	rows, err := s.db.Query(`
+							SELECT name 
+							FROM snapshots 
+							WHERE source = ? AND 
+							      name like ?
+							ORDER BY length(name), name;`, source, pattern.String())
 	defer rows.Close()
 	if err != nil {
 		return []string{}, err
@@ -325,12 +303,13 @@ func (s *Storage) Close() error {
 }
 
 func (s *Storage) queryRawEvents(query string, args []interface{}, offset, limit uint64) ([]p.RawEvent, error) {
-	query, args = addOffsetLimit(query, args, offset, limit)
+	query2, args2 := addOffsetLimit(query, args, offset, limit)
 
-	rows, err := s.db.Query(query, args...)
+	rows, err := s.db.Query(query2, args2...)
 	defer rows.Close()
 	if err != nil {
 		log.Println("ERR", err.Error())
+		log.Println("Query", query2, args2)
 		return nil, err
 	}
 
@@ -346,11 +325,12 @@ func (s *Storage) queryRawEvents(query string, args []interface{}, offset, limit
 }
 
 func addOffsetLimit(q string, args []interface{}, offset, limit uint64) (string, []interface{}) {
-	q += " OFFSET ?"
-	args = append(args, offset)
-	if limit > 0 {
-		q += " LIMIT ?"
-		args = append(args, limit)
+	maxLimit := limit
+	if limit == 0 {
+		maxLimit = math.MaxUint64
 	}
+	q += " LIMIT ?, ?"
+	args = append(args, offset, maxLimit)
+
 	return q, args
 }
