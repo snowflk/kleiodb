@@ -3,9 +3,11 @@ package postgres
 import (
 	"database/sql"
 	"fmt"
+	_ "github.com/lib/pq"
 	p "github.com/snowflk/kleiodb/internal/persistence"
 	"log"
 	"strings"
+	"sync"
 )
 
 const (
@@ -14,7 +16,8 @@ const (
 )
 
 type Storage struct {
-	db *sql.DB
+	appendLock sync.Mutex
+	db         *sql.DB
 }
 
 type Options struct {
@@ -30,13 +33,24 @@ func New(opts Options) (*Storage, error) {
 		opts.Host, opts.Port, opts.User, opts.Password, opts.Database)
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
+		log.Println("Failed to open")
 		return nil, err
 	}
+	err = db.Ping()
+	if err != nil {
+		log.Println("Failed to ping")
+		return nil, err
+	}
+
 	db.SetMaxOpenConns(MaxOpenConnections)
 	db.SetMaxIdleConns(MaxIdleConnections)
 	return &Storage{
 		db: db,
 	}, nil
+}
+
+func (s *Storage) ForceFlush() error {
+	return nil
 }
 
 func (s *Storage) AppendEvents(data [][]byte, views []string) ([]uint64, error) {
@@ -48,17 +62,17 @@ func (s *Storage) AppendEvents(data [][]byte, views []string) ([]uint64, error) 
 	queryPlaceholders := make([]string, dataSize)
 	queryArgs := make([]interface{}, dataSize)
 	for i, item := range data {
-		queryPlaceholders[i] = fmt.Sprintf("$%d", i+1)
+		queryPlaceholders[i] = fmt.Sprintf("($%d)", i+1)
 		queryArgs[i] = item
 	}
 
-	rows, err := s.db.Query(fmt.Sprintf("INSERT INTO raw_events (data) VALUES %s RETURNING serial",
+	s.appendLock.Lock()
+	defer s.appendLock.Unlock()
+
+	rows, err := s.db.Query(fmt.Sprintf("INSERT INTO raw_events (data) VALUES %s RETURNING serial;",
 		strings.Join(queryPlaceholders, ",")), queryArgs...)
+
 	defer rows.Close()
-	if err != nil {
-		log.Println("ERR", err)
-		return nil, err
-	}
 
 	serialNumbers := make([]uint64, dataSize)
 	counter := 0
@@ -69,7 +83,7 @@ func (s *Storage) AppendEvents(data [][]byte, views []string) ([]uint64, error) 
 		counter++
 	}
 
-	if views != nil {
+	if views != nil && len(views) > 0 {
 		// Append serials to views based on view name
 		queryPlaceholders := make([]string, dataSize*len(views))
 		queryArgs := make([]interface{}, 2*dataSize*len(views))
@@ -92,9 +106,6 @@ func (s *Storage) AppendEvents(data [][]byte, views []string) ([]uint64, error) 
 }
 
 func (s *Storage) AddEventsToView(viewName string, serials []uint64) error {
-	if p.CheckStringEmpty(viewName) {
-		return p.ErrViewEmpty
-	}
 	if serials == nil {
 		return p.ErrDataInvalid
 	}
@@ -115,14 +126,12 @@ func (s *Storage) AddEventsToView(viewName string, serials []uint64) error {
 }
 
 func (s *Storage) GetEventsFromView(viewName string, offset, limit uint64) ([]p.RawEvent, error) {
-	if p.CheckStringEmpty(viewName) {
-		return nil, p.ErrViewEmpty
-	}
 	query := `
 			SELECT e.serial, e.data, e.created_at
 			FROM views v
 			INNER JOIN raw_events e ON  e.serial = v.serial
-			WHERE view_name = $1`
+			WHERE view_name = $1
+			ORDER BY e.serial `
 	args := []interface{}{viewName}
 	return s.queryRawEvents(query, args, offset, limit)
 }
@@ -134,23 +143,19 @@ func (s *Storage) ClearView(viewName string) error {
 
 func (s *Storage) GetEvents(offset, limit uint64) ([]p.RawEvent, error) {
 	return s.queryRawEvents(`
-				SELECT serial, data, created_at FROM raw_events`,
+				SELECT serial, data, created_at 
+				FROM raw_events 
+				ORDER BY serial`,
 		[]interface{}{}, offset, limit)
 }
 
 func (s *Storage) CreateViewMeta(viewName string, payload []byte) error {
-	if err := p.ValidateString(viewName); err != nil {
-		return err
-	}
 	_, err := s.db.Exec("INSERT INTO streams(name, data) VALUES($1, $2);", viewName, payload)
 	return err
 }
 
 func (s *Storage) GetViewMeta(viewName string) (p.RawView, error) {
 	var rawStream p.RawView
-	if err := p.ValidateString(viewName); err != nil {
-		return rawStream, err
-	}
 	row := s.db.QueryRow("SELECT name, version, data FROM streams WHERE name = $1;", viewName)
 	if err := row.Scan(&rawStream.ViewName, &rawStream.Version, &rawStream.Payload); err != nil {
 		return rawStream, err
@@ -176,9 +181,6 @@ func (s *Storage) FindViews(pattern p.SearchPattern) ([]string, error) {
 }
 
 func (s *Storage) GetViewVersion(viewName string) (uint32, error) {
-	if err := p.ValidateString(viewName); err != nil {
-		return 0, err
-	}
 	row := s.db.QueryRow(`
 							SELECT version 
 							FROM streams 
@@ -192,9 +194,6 @@ func (s *Storage) GetViewVersion(viewName string) (uint32, error) {
 }
 
 func (s *Storage) IncrementViewVersion(viewName string, increment uint32) (uint32, error) {
-	if err := p.ValidateString(viewName); err != nil {
-		return 0, err
-	}
 	row := s.db.QueryRow(`UPDATE streams
 							SET version = version + $1
 							WHERE name = $2 
@@ -208,9 +207,6 @@ func (s *Storage) IncrementViewVersion(viewName string, increment uint32) (uint3
 }
 
 func (s *Storage) UpdateViewMeta(viewName string, payload []byte) error {
-	if err := p.ValidateString(viewName); err != nil {
-		return err
-	}
 	if payload == nil {
 		return p.ErrDataInvalid
 	}
@@ -226,44 +222,30 @@ func (s *Storage) UpdateViewMeta(viewName string, payload []byte) error {
 }
 
 func (s *Storage) SaveSnapshot(source, name string, data []byte) error {
-	err := p.ValidateSnapshotSourceAndName(source, name)
-	if err != nil {
-		return err
-	}
-
-	_, err = s.db.Exec("INSERT INTO snapshots(name, source, data) VALUES($1, $2, $3);", name, source, data)
+	_, err := s.db.Exec("INSERT INTO snapshots(name, source, data) VALUES($1, $2, $3);", name, source, data)
 	return err
 }
 
 func (s *Storage) GetSnapshot(source, name string) (p.RawSnapshot, error) {
 	var snapShot p.RawSnapshot
 
-	err := p.ValidateSnapshotSourceAndName(source, name)
-	if err != nil {
-		return snapShot, err
-	}
+	row := s.db.QueryRow("SELECT source, name, data, created_at FROM snapshots WHERE source = $1 AND name = $2 ORDER BY created_at DESC LIMIT 1;", source, name)
 
-	rows, err := s.db.Query("SELECT source, name, data, created_at FROM snapshots WHERE source = $1 AND name = $2 LIMIT 1;", source, name)
-	defer rows.Close()
-	if err != nil {
+	if err := row.Scan(&snapShot.Source, &snapShot.Name, &snapShot.Payload, &snapShot.Timestamp); err != nil {
 		return snapShot, err
-	}
-
-	for rows.Next() {
-		if err = rows.Scan(&snapShot.Source, &snapShot.Name, &snapShot.Payload, &snapShot.Timestamp); err != nil {
-			return snapShot, err
-		}
 	}
 
 	return snapShot, nil
 }
 
 func (s *Storage) FindSnapshots(source string, pattern p.SearchPattern) ([]string, error) {
-	if p.CheckStringEmpty(source) {
-		return nil, p.ErrSnapshotSourceEmpty
-	}
 
-	rows, err := s.db.Query("SELECT DISTINCT name FROM snapshots WHERE source = $1 AND name like $2;", source, pattern.String())
+	rows, err := s.db.Query(`
+							SELECT name 
+							FROM snapshots 
+							WHERE source = $1 AND 
+							      name like $2
+							ORDER BY length(name), name;`, source, pattern.String())
 	defer rows.Close()
 	if err != nil {
 		return []string{}, err
@@ -283,16 +265,18 @@ func (s *Storage) FindSnapshots(source string, pattern p.SearchPattern) ([]strin
 }
 
 func (s *Storage) Close() error {
-	return s.db.Close()
+	err := s.db.Close()
+	if err != nil {
+		log.Println("Failed to close")
+	}
+	return err
 }
 
 func (s *Storage) queryRawEvents(query string, args []interface{}, offset, limit uint64) ([]p.RawEvent, error) {
 	query, args = addOffsetLimit(query, args, offset, limit)
-
 	rows, err := s.db.Query(query, args...)
 	defer rows.Close()
 	if err != nil {
-		log.Println("ERR", err.Error())
 		return nil, err
 	}
 
@@ -311,7 +295,7 @@ func addOffsetLimit(q string, args []interface{}, offset, limit uint64) (string,
 	q += fmt.Sprintf(" OFFSET $%d", len(args)+1)
 	args = append(args, offset)
 	if limit > 0 {
-		q += fmt.Sprintf(" LIMIT $%d", len(args)+2)
+		q += fmt.Sprintf(" LIMIT $%d", len(args)+1)
 		args = append(args, limit)
 	}
 	return q, args
