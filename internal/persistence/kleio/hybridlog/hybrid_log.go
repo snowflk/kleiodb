@@ -285,9 +285,9 @@ func (l *HybridLog) Position() int64 {
 func (l *HybridLog) requestRemap() {
 	l.remapQueue <- nil
 
-	//l.remapLock.Lock()
+	l.remapLock.Lock()
 	l.remapping = true
-	//l.remapLock.Unlock()
+	l.remapLock.Unlock()
 }
 
 func (l *HybridLog) isRemapping() bool {
