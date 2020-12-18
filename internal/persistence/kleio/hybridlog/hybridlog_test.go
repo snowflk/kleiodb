@@ -11,7 +11,6 @@ import (
 
 var l *SimpleHybridLog
 var err error
-var data []byte
 
 func init() {
 	_ = os.Remove("./test.log")
@@ -23,11 +22,6 @@ func init() {
 	if err != nil {
 		fmt.Printf("%+v", err)
 		panic(err)
-	}
-	nData := 1024 // 1kb
-	data = make([]byte, nData)
-	for i := 0; i < nData; i++ {
-		data[i] = byte(i % 256)
 	}
 }
 func TestHybridLog(t *testing.T) {
@@ -61,6 +55,12 @@ func TestHybridLog(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+	all := make([]byte, nData*100)
+	n, err := l.ReadAt(all, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, nData*100-100, n)
 }
 
 func TestCompactHybridLog(t *testing.T) {
@@ -107,8 +107,76 @@ func TestCompactHybridLog(t *testing.T) {
 	wg.Wait()
 	clog.Close()
 }
-func BenchmarkSimpleHybridLog(b *testing.B) {
+
+func BenchmarkHybridLog_Write_512b(b *testing.B) {
+	benchWrite(b, 512)
+}
+
+func BenchmarkHybridLog_Write_1KB(b *testing.B) {
+	benchWrite(b, 1024)
+}
+
+func BenchmarkHybridLog_Write_4KB(b *testing.B) {
+	benchWrite(b, 1024*4)
+}
+
+func BenchmarkHybridLog_Write_32KB(b *testing.B) {
+	benchWrite(b, 1024*32)
+}
+
+func BenchmarkHybridLog_Write_128KB(b *testing.B) {
+	benchWrite(b, 1024*128)
+}
+
+func BenchmarkHybridLog_Write_1MB(b *testing.B) {
+	benchWrite(b, 1024*1024)
+}
+
+func BenchmarkHybridLog_Read_512b(b *testing.B) {
+	benchRead(b, 512)
+}
+
+func BenchmarkHybridLog_Read_1KB(b *testing.B) {
+	benchRead(b, 1024)
+}
+
+func BenchmarkHybridLog_Read_4KB(b *testing.B) {
+	benchRead(b, 1024*4)
+}
+
+func BenchmarkHybridLog_Read_32KB(b *testing.B) {
+	benchRead(b, 1024*32)
+}
+
+func BenchmarkHybridLog_Read_128KB(b *testing.B) {
+	benchRead(b, 1024*128)
+}
+
+func BenchmarkHybridLog_Read_1MB(b *testing.B) {
+	benchRead(b, 1024*1024)
+}
+
+func benchWrite(b *testing.B, dataSize int) {
+	data := make([]byte, dataSize)
+	for i := 0; i < dataSize; i++ {
+		data[i] = byte(i % 256)
+	}
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		l.Write(data)
+	}
+}
+
+func benchRead(b *testing.B, dataSize int) {
+	data := make([]byte, dataSize)
+	for i := 0; i < dataSize; i++ {
+		data[i] = byte(i % 256)
+	}
+	for i := 0; i < 1000; i++ {
+		l.Write(data)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		l.ReadAt(data, 0)
 	}
 }

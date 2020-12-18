@@ -9,7 +9,7 @@ type SyncPolicy int
 
 const (
 	TimeBased CompactionMode = iota
-	FragmentationBase
+	FragmentationBased
 	NoSync SyncPolicy = iota
 	AlwaysSync
 	SyncEverySecond
