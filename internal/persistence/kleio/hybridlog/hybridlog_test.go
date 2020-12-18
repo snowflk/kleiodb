@@ -13,7 +13,7 @@ var l *SimpleHybridLog
 var err error
 var data []byte
 
-func ainit() {
+func init() {
 	_ = os.Remove("./test.log")
 	_ = os.Remove("./compacttest.log")
 	l, err = open(Config{
@@ -106,22 +106,4 @@ func TestCompactHybridLog(t *testing.T) {
 	}
 	wg.Wait()
 	clog.Close()
-}
-
-func BenchmarkHybridLog_1KB(b *testing.B) {
-	b.Run("Write", func(b *testing.B) {
-		for n := 0; n < b.N; n++ {
-			if err := l.Write(data); err != nil {
-				b.Fatal(err)
-			}
-		}
-	})
-	b.Run("Read", func(b *testing.B) {
-		for n := 0; n < b.N; n++ {
-			readB := make([]byte, 128)
-			if _, err := l.ReadAt(readB, 128); err != nil {
-				b.Fatal(err)
-			}
-		}
-	})
 }

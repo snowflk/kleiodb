@@ -2,6 +2,7 @@ package testsuite
 
 import (
 	"fmt"
+	log "github.com/sirupsen/logrus"
 	"github.com/snowflk/kleiodb/internal/persistence"
 	"sync"
 	"time"
@@ -57,10 +58,10 @@ func (s *persistenceModuleTestSuite) TestSnapshotKeeper_Save() {
 // The snapshot's content will only be found in case of existed snapshot
 // Otherwise an error will occur if the snapshot does not exist
 func (s *persistenceModuleTestSuite) TestSnapshotKeeper_Get() {
+	log.Info("Get no snapshot")
 	nSource := uint64(10)
 	nName := uint64(10)
 	now := time.Now()
-
 	// Error if no snapshot is found
 	for sourceNum := uint64(1); sourceNum <= nSource; sourceNum++ {
 		source := fmt.Sprintf("source-%d", int(sourceNum))
@@ -73,6 +74,7 @@ func (s *persistenceModuleTestSuite) TestSnapshotKeeper_Get() {
 			s.Assert().NotNil(err)
 		}
 	}
+	log.Info("Save snapshot")
 
 	// Save snapshot
 	var wg sync.WaitGroup
@@ -85,11 +87,15 @@ func (s *persistenceModuleTestSuite) TestSnapshotKeeper_Get() {
 				name := fmt.Sprintf("name-%d", int(namNum))
 				payload := []byte(fmt.Sprintf("%d_%d", int(sourceNum), int(namNum)))
 				err := s.storage.SaveSnapshot(source, name, payload)
-				s.Assert().Nil(err, fmt.Sprintf("%s from %s cannot be created", name, source))
+				//s.Assert().Nil(err, fmt.Sprintf("%s from %s cannot be created", name, source))
+				if err != nil {
+					s.T().Fatal(err)
+				}
 			}
 		}(sourceNum)
 	}
 	wg.Wait()
+	log.Info("Get real snapshot")
 
 	// Get snapshot
 	for sourceNum := uint64(1); sourceNum <= nSource; sourceNum++ {

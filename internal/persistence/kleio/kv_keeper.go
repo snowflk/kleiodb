@@ -15,10 +15,10 @@ const (
 )
 
 var (
-	viewBucketKey         = []byte("views")
-	viewVersionBucketName = []byte("view_versions")
-	snapshotBucketKey     = []byte("snapshots")
-	ByteOrdering          = binary.LittleEndian
+	viewBucketKey        = []byte("views")
+	viewVersionBucketKey = []byte("view_versions")
+	snapshotBucketKey    = []byte("snapshots")
+	ByteOrdering         = binary.LittleEndian
 )
 
 type KVKeeper struct {
@@ -36,7 +36,19 @@ func NewKVKeeper(rootDir string) (*KVKeeper, error) {
 		rootDir: rootDir,
 		store:   store,
 	}
-	return keeper, nil
+	err = store.Update(func(tx *bbolt.Tx) error {
+		if _, err := tx.CreateBucketIfNotExists(viewBucketKey); err != nil {
+			return err
+		}
+		if _, err := tx.CreateBucketIfNotExists(viewVersionBucketKey); err != nil {
+			return err
+		}
+		if _, err := tx.CreateBucketIfNotExists(snapshotBucketKey); err != nil {
+			return err
+		}
+		return nil
+	})
+	return keeper, err
 }
 
 func (s *KVKeeper) CreateViewMeta(viewName string, payload []byte) error {
@@ -44,7 +56,7 @@ func (s *KVKeeper) CreateViewMeta(viewName string, payload []byte) error {
 	ByteOrdering.PutUint32(versionBytes, uint32(0))
 	return s.store.Update(func(tx *bbolt.Tx) error {
 		viewBkt := tx.Bucket(viewBucketKey)
-		viewVersionBkt := tx.Bucket(viewVersionBucketName)
+		viewVersionBkt := tx.Bucket(viewVersionBucketKey)
 		key := []byte(viewName)
 		// Check if view already exists
 		if viewBkt.Get(key) != nil {
@@ -65,7 +77,7 @@ func (s *KVKeeper) GetViewMeta(viewName string) (persistence.RawView, error) {
 	view.ViewName = viewName
 	err := s.store.View(func(tx *bbolt.Tx) error {
 		viewBkt := tx.Bucket(viewBucketKey)
-		viewVersionBkt := tx.Bucket(viewVersionBucketName)
+		viewVersionBkt := tx.Bucket(viewVersionBucketKey)
 		key := []byte(viewName)
 		dataBytes := viewBkt.Get(key)
 		if dataBytes == nil {
@@ -77,7 +89,8 @@ func (s *KVKeeper) GetViewMeta(viewName string) (persistence.RawView, error) {
 		}
 		// transform data back
 		view.Version = ByteOrdering.Uint32(versionBytes)
-		copy(view.Payload, dataBytes[8:])
+		view.Payload = make([]byte, len(dataBytes))
+		copy(view.Payload, dataBytes)
 		return nil
 	})
 	return view, err
@@ -104,7 +117,7 @@ func (s *KVKeeper) FindViews(pattern persistence.SearchPattern) ([]string, error
 func (s *KVKeeper) GetViewVersion(viewName string) (uint32, error) {
 	var version uint32
 	err := s.store.View(func(tx *bbolt.Tx) error {
-		viewVersionBkt := tx.Bucket(viewVersionBucketName)
+		viewVersionBkt := tx.Bucket(viewVersionBucketKey)
 		key := []byte(viewName)
 		versionBytes := viewVersionBkt.Get(key)
 		if versionBytes == nil {
@@ -119,13 +132,14 @@ func (s *KVKeeper) GetViewVersion(viewName string) (uint32, error) {
 func (s *KVKeeper) IncrementViewVersion(viewName string, increment uint32) (uint32, error) {
 	var version uint32
 	err := s.store.Update(func(tx *bbolt.Tx) error {
-		viewVersionBkt := tx.Bucket(viewVersionBucketName)
+		viewVersionBkt := tx.Bucket(viewVersionBucketKey)
 		key := []byte(viewName)
 		versionBytes := viewVersionBkt.Get(key)
 		if versionBytes == nil {
 			return errors.New("view does not exist")
 		}
 		version = ByteOrdering.Uint32(versionBytes) + increment
+		versionBytes = make([]byte, 8)
 		ByteOrdering.PutUint32(versionBytes, version)
 		err := viewVersionBkt.Put(key, versionBytes)
 		if err != nil {
@@ -192,7 +206,11 @@ func (s *KVKeeper) GetSnapshot(source, name string) (persistence.RawSnapshot, er
 			return err
 		}
 		snapshot.Timestamp = time.Unix(timestampUnix, 0)
+		snapshot.Payload = make([]byte, len(payload)-8)
+		snapshot.Name = name
+		snapshot.Source = source
 		copy(snapshot.Payload, payload[8:])
+
 		return nil
 	})
 	return snapshot, err

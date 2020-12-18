@@ -11,7 +11,7 @@ import (
 const (
 	maxMapSize              = 0xFFFFFFFFFFFF
 	checkpointByteAlignment = 8
-	remapQueueCapacity      = 1<<31 - 1
+	remapQueueCapacity      = 1024
 	defaultBufferSize       = 16 * 1024 * 1024 // 16MB
 	defaultHighWaterMark    = 75               // 75% of buffer capacity
 )
@@ -158,6 +158,8 @@ func (l *SimpleHybridLog) ReadAt(b []byte, fromPos int64) (int, error) {
 	}
 
 	var dEnd, rEnd int64
+	// Perform linear search to find the leftmost checkpoint
+	// Perhaps we can use binary search here or something
 	for _, ckpt := range l.checkpoints {
 		dEnd = ckpt.dpos
 		rEnd = ckpt.pos
@@ -167,7 +169,6 @@ func (l *SimpleHybridLog) ReadAt(b []byte, fromPos int64) (int, error) {
 			rStart = rEnd + checkpointSize
 			continue
 		}
-
 		// If we're at the leftmost or rightmost fragment,
 		// maybe we need to clip the range because the user requested range may not
 		// cover the entire fragment
@@ -181,7 +182,7 @@ func (l *SimpleHybridLog) ReadAt(b []byte, fromPos int64) (int, error) {
 		}
 
 		// Read the fragment
-		if err := l.readPartially(b[n:n+(readEnd-readStart)], readStart); err != nil {
+		if err := l.readFragment(b[n:n+(readEnd-readStart)], readStart); err != nil {
 			return 0, err
 		}
 
@@ -197,7 +198,7 @@ func (l *SimpleHybridLog) ReadAt(b []byte, fromPos int64) (int, error) {
 	return int(toPos - fromPos), nil
 }
 
-// readPartially takes care of read data in a given range.
+// readFragment takes care of read data in a given range.
 // Depending on the range and the stage state, it will decide where to
 // read the data from.
 //
@@ -205,10 +206,10 @@ func (l *SimpleHybridLog) ReadAt(b []byte, fromPos int64) (int, error) {
 // we'll never read from both mmap and buffer at the same time
 // If that's the case, there must be a mistake
 //
-// Note: This function must ONLY be used for reading data between two checkpoints, hence the name "readPartially".
+// Note: This function must ONLY be used for reading data between two checkpoints, hence the name "readFragment".
 // In fact, this should only be called by ReadAt.
 // This function also assumes that you are reading in a valid range
-func (l *SimpleHybridLog) readPartially(b []byte, fromRealPos int64) error {
+func (l *SimpleHybridLog) readFragment(b []byte, fromRealPos int64) error {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 
@@ -306,6 +307,10 @@ func (l *SimpleHybridLog) mmap() error {
 	b, err := syscall.Mmap(int(l.f.Fd()), 0, int(size), syscall.PROT_READ, syscall.MAP_SHARED)
 	if err != nil {
 		return err
+	}
+	_, _, e1 := syscall.Syscall(syscall.SYS_MADVISE, uintptr(unsafe.Pointer(&b[0])), uintptr(len(b)), uintptr(syscall.MADV_RANDOM))
+	if e1 != 0 {
+		return e1
 	}
 	l.dataref = b
 	l.data = (*[maxMapSize]byte)(unsafe.Pointer(&b[0]))

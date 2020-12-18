@@ -59,6 +59,9 @@ func openIndex(rootDir string, name string) (*Index, error) {
 
 func deleteIndex(rootDir, name string) error {
 	indexPath := filepath.Join(rootDir, fmt.Sprintf(indexFilenameFormat, name))
+	if _, err := os.Stat(indexPath); os.IsNotExist(err) {
+		return nil
+	}
 	return os.Remove(indexPath)
 }
 

@@ -1,6 +1,9 @@
 package kleio
 
-import "github.com/snowflk/kleiodb/internal/persistence"
+import (
+	log "github.com/sirupsen/logrus"
+	"github.com/snowflk/kleiodb/internal/persistence"
+)
 
 type Storage struct {
 	persistence.EventKeeper
@@ -17,6 +20,7 @@ func New(options Options) (persistence.Storage, error) {
 	if err != nil {
 		return nil, err
 	}
+	log.Info("Created")
 	return &Storage{
 		EventKeeper:    eventKeeper,
 		ViewKeeper:     kvKeeper,
@@ -25,7 +29,10 @@ func New(options Options) (persistence.Storage, error) {
 }
 
 func (s *Storage) Close() error {
-	defer s.ViewKeeper.Close()
 	defer s.EventKeeper.Close()
+	return s.ViewKeeper.Close()
+}
+
+func (s *Storage) ForceFlush() error {
 	return nil
 }

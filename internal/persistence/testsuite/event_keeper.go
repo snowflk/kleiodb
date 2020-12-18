@@ -158,6 +158,9 @@ func (s *persistenceModuleTestSuite) TestEventKeeper_Clear() {
 	for viewNum := uint64(0); viewNum < nDeleteViews; viewNum++ {
 		viewName := fmt.Sprintf("view-%d", int(viewNum)+1)
 		err := s.storage.ClearView(viewName)
+		if err != nil {
+			s.T().Fatal(err)
+		}
 		s.Assert().Nil(err)
 	}
 

@@ -3,6 +3,7 @@ package testsuite
 import (
 	"fmt"
 	"github.com/snowflk/kleiodb/internal/persistence"
+	"log"
 	"sync"
 )
 
@@ -251,10 +252,8 @@ func (s *persistenceModuleTestSuite) TestViewKeeper_Find() {
 		err            error
 	}{
 		{pattern: persistence.Pattern("View"), expectedLength: 0},
-		{pattern: persistence.Pattern("view%"), expectedLength: int(nView)},
+		{pattern: persistence.Pattern("view*"), expectedLength: int(nView)},
 		{pattern: persistence.Pattern(fmt.Sprintf("view-%d", int(nView))), expectedLength: 1},
-		{pattern: persistence.Pattern("view*"), expectedLength: 0},
-		//{pattern: persistence.Pattern("view-*"), expectedLength: int(nView)},
 		{pattern: persistence.Pattern("view *"), expectedLength: 0},
 	}
 	for _, test := range testFindViews {
@@ -263,6 +262,7 @@ func (s *persistenceModuleTestSuite) TestViewKeeper_Find() {
 			s.T().Log("Cannot find views with patter", test.pattern)
 			s.T().Fatal(err)
 		}
-		s.Assert().Equal(test.expectedLength, len(viewNames), "View's names does not match for", test.pattern.String())
+		log.Printf("%+v\n", viewNames)
+		s.Assert().Equal(test.expectedLength, len(viewNames), "View's names does not match for %s. Expected %d, actual %d", test.pattern.String(), test.expectedLength, len(viewNames))
 	}
 }

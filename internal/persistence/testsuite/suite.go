@@ -1,9 +1,9 @@
 package testsuite
 
 import (
+	log "github.com/sirupsen/logrus"
 	"github.com/snowflk/kleiodb/internal/persistence"
 	"github.com/stretchr/testify/suite"
-	"log"
 )
 
 type persistenceModuleTestSuite struct {
@@ -25,6 +25,6 @@ func (s *persistenceModuleTestSuite) SetupTest() {
 }
 
 func (s *persistenceModuleTestSuite) TearDownTest() {
-	log.Println("After test")
 	defer s.storage.Close()
+	log.Info("Tear down")
 }

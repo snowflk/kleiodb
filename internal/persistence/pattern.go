@@ -1,7 +1,6 @@
 package persistence
 
 import (
-	"fmt"
 	"regexp"
 	"strings"
 )
@@ -15,7 +14,7 @@ type SearchPattern struct {
 
 func Pattern(s string) SearchPattern {
 	regStr := strings.ReplaceAll(s, "*", `(\w\d)*`)
-	reg, err := regexp.Compile(fmt.Sprintf("^%s$", regStr))
+	reg, err := regexp.Compile(regStr)
 	return SearchPattern{
 		original: s,
 		regStr:   regStr,
@@ -28,7 +27,7 @@ func (p SearchPattern) Match(name string) bool {
 	if !p.valid {
 		return false
 	}
-	return p.regexp.Match([]byte(name))
+	return p.regexp.MatchString(name)
 }
 
 func (p SearchPattern) Valid() bool {

@@ -1,6 +1,7 @@
 package kleio
 
 import (
+	log "github.com/sirupsen/logrus"
 	"os"
 	"strconv"
 	"sync"
@@ -36,7 +37,7 @@ func TestStreamIterator_Next(t *testing.T) {
 		}(reqNum)
 	}
 	wg.Wait()
-	iter := newStreamIterator(gStream, 0)
+	iter := newStreamIterator(gStream, sizeStreamHeader)
 	if iter.Err() != nil {
 		t.Fatal(iter.Err())
 	}
@@ -45,6 +46,7 @@ func TestStreamIterator_Next(t *testing.T) {
 		counter++
 		//log.Println(string(iter.Entry().Payload), iter.Entry().Serial)
 	}
+	log.Info(iter.Err())
 	if counter != nRequests*nEvents {
 		t.Error("total number of events doesn't match")
 	}

@@ -33,7 +33,7 @@ var (
 type GlobalStream struct {
 	mu sync.RWMutex
 
-	f    *hybridlog.HybridLog
+	f    hybridlog.HybridLog
 	name string
 	// lastSerial is the current position of the "cursor" in the stream (in terms of events)
 	// each time an event is appended, lastSerial is incremented by one
@@ -56,10 +56,11 @@ func OpenGlobalStream(streamName string, opts GlobalStreamOpts) (*GlobalStream, 
 		return nil, ErrRootDirNotSpecified
 	}
 	gStreamPath := filepath.Join(opts.RootDir, fmt.Sprintf(gStreamFilenameFormat, streamName))
-	log.Infof("Open global stream at %s", gStreamPath)
-	file, err := hybridlog.Open(hybridlog.Opts{
-		Path:          gStreamPath,
-		HighWaterMark: 50,
+	log.Infof("open global stream at %s", gStreamPath)
+	file, err := hybridlog.Open(hybridlog.Config{
+		AutoCompaction: true,
+		Path:           gStreamPath,
+		HighWaterMark:  50,
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "filed to open file")
@@ -68,7 +69,7 @@ func OpenGlobalStream(streamName string, opts GlobalStreamOpts) (*GlobalStream, 
 	s := &GlobalStream{
 		f:          file,
 		name:       streamName,
-		position:   file.Position(),
+		position:   file.Size(),
 		lastSerial: 0,
 	}
 
@@ -81,7 +82,7 @@ func OpenGlobalStream(streamName string, opts GlobalStreamOpts) (*GlobalStream, 
 		}
 		copy(header.Name[:], streamName)
 		headerBytes := (*(*[sizeStreamHeader]byte)(unsafe.Pointer(&header)))[:]
-		if err := s.f.Append(headerBytes); err != nil {
+		if err := s.f.Write(headerBytes); err != nil {
 			return nil, errors.Wrap(err, "failed to write stream header")
 		}
 		s.position += sizeStreamHeader
@@ -142,7 +143,7 @@ func (s *GlobalStream) Append(payloads [][]byte) ([]uint64, []int64, error) {
 	}
 
 	// flush to disk
-	if err := s.f.Append(buf.Bytes()); err != nil {
+	if err := s.f.Write(buf.Bytes()); err != nil {
 		return nil, nil, errors.Wrap(err, "failed to write")
 	}
 	s.position += int64(buf.Len())
