@@ -107,3 +107,8 @@ func TestCompactHybridLog(t *testing.T) {
 	wg.Wait()
 	clog.Close()
 }
+func BenchmarkSimpleHybridLog(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		l.Write(data)
+	}
+}

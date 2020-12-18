@@ -4,14 +4,14 @@ import (
 	"github.com/pkg/errors"
 	"os"
 	"sync"
-	"syscall"
+	"time"
 	"unsafe"
 )
 
 const (
 	maxMapSize              = 0xFFFFFFFFFFFF
 	checkpointByteAlignment = 8
-	remapQueueCapacity      = 1024
+	remapQueueCapacity      = 32
 	defaultBufferSize       = 16 * 1024 * 1024 // 16MB
 	defaultHighWaterMark    = 75               // 75% of buffer capacity
 )
@@ -60,10 +60,21 @@ func open(opts Config) (*SimpleHybridLog, error) {
 	if opts.HighWaterMark == 0 {
 		opts.HighWaterMark = defaultHighWaterMark
 	}
-	file, err := os.OpenFile(opts.Path, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644|os.ModeSticky)
+
+	fileFlags := os.O_RDWR | os.O_CREATE | os.O_APPEND
+	// Use O_SYNC flag for always sync policy
+	if opts.SyncPolicy == AlwaysSync {
+		fileFlags |= os.O_SYNC
+	}
+	file, err := os.OpenFile(opts.Path, fileFlags, 0644|os.ModeSticky)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to open file")
 	}
+
+	if err := flock(file.Fd(), opts.OpenTimeout); err != nil {
+		return nil, err
+	}
+
 	l := &SimpleHybridLog{
 		opts:        opts,
 		f:           file,
@@ -82,6 +93,10 @@ func open(opts Config) (*SimpleHybridLog, error) {
 	}
 
 	l.startRemappingWorker()
+	// Start worker for 'every 1s' sync policy
+	if opts.SyncPolicy == SyncEverySecond {
+		l.startSyncWorker()
+	}
 	return l, nil
 }
 
@@ -304,13 +319,13 @@ func (l *SimpleHybridLog) mmap() error {
 	if size < int64(osPageSize) {
 		size = int64(osPageSize)
 	}
-	b, err := syscall.Mmap(int(l.f.Fd()), 0, int(size), syscall.PROT_READ, syscall.MAP_SHARED)
+	b, err := mmap(l.f.Fd(), int(size))
 	if err != nil {
 		return err
 	}
-	_, _, e1 := syscall.Syscall(syscall.SYS_MADVISE, uintptr(unsafe.Pointer(&b[0])), uintptr(len(b)), uintptr(syscall.MADV_RANDOM))
-	if e1 != 0 {
-		return e1
+	err = madvise(b)
+	if err != nil {
+		return err
 	}
 	l.dataref = b
 	l.data = (*[maxMapSize]byte)(unsafe.Pointer(&b[0]))
@@ -324,7 +339,7 @@ func (l *SimpleHybridLog) munmap() error {
 		return nil
 	}
 	// Unmap using the original byte slice.
-	err := syscall.Munmap(l.dataref)
+	err := munmap(l.dataref)
 	l.dataref = nil
 	l.data = nil
 	l.datasz = 0
@@ -341,6 +356,8 @@ func (l *SimpleHybridLog) Close() error {
 	l.remapLock.Lock()
 	defer l.remapLock.Unlock()
 	defer l.munmap()
+	defer funlock(l.f.Fd())
+
 	return l.f.Close()
 }
 
@@ -366,6 +383,18 @@ func (l *SimpleHybridLog) startRemappingWorker() {
 				l.remapLock.Unlock()
 			case <-l.stopChan:
 				return
+			}
+		}
+	}()
+}
+
+func (l *SimpleHybridLog) startSyncWorker() {
+	go func() {
+		ticker := time.NewTicker(1 * time.Second)
+		for {
+			select {
+			case <-ticker.C:
+				_ = l.f.Sync()
 			}
 		}
 	}()

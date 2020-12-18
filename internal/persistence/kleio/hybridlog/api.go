@@ -1,12 +1,18 @@
 package hybridlog
 
-import "io"
+import (
+	"time"
+)
 
 type CompactionMode int
+type SyncPolicy int
 
 const (
-	TimeBased = iota
-	FragmentationBased
+	TimeBased CompactionMode = iota
+	FragmentationBase
+	NoSync SyncPolicy = iota
+	AlwaysSync
+	SyncEverySecond
 )
 
 //
@@ -21,13 +27,14 @@ type Config struct {
 	// SimpleHybridLog configurations
 	// Path simply locates where to store the data. The file extension needs to be provided.
 	Path string
-
 	// HighWaterMark defines the fullness of buffer (in percent) at which the remapping process will be started
 	HighWaterMark int
-
 	// The size of buffer (in bytes) for keeping the new written data in memory.
 	// The larger the buffer size is, the more memory will be consumed.
-	BufferSize int
+	BufferSize  int
+	OpenTimeout time.Duration
+	// SyncPolicy denotes when to perform fdatasync
+	SyncPolicy SyncPolicy
 
 	// Compactor configurations
 	AutoCompaction bool
@@ -38,7 +45,7 @@ type Config struct {
 	CompactAfter int
 	// The maximum size of the chunks to copy
 	CompactionChunkSize int
-	CustomCompactor     func(src io.ReadSeeker, dst io.Writer)
+	//CustomCompactor     func(src io.ReadSeeker, dst io.Writer)
 }
 
 // Open opens a hybrid log at the given path in config.
